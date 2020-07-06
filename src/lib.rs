@@ -321,27 +321,22 @@ impl KVMIntrospectable for KVMi {
             cmp::max(mem::align_of::<u32>(), mem::align_of::<kvm_msr_entry>()),
         )
         .unwrap();
-        /*let layout = Layout::from_size_align(
-            size * (mem::size_of::<kvm_msr_entry>()),
-            mem::align_of::<kvm_msr_entry>(),
-        )
-        .unwrap();*/
-        let mut msr_ptr = alloc(layout) as *mut kvm_msrs;
-        let mut msrs_slice = unsafe { slice::from_raw_parts(msr_ptr, 1) };
-        let mut msrs = (*msrs_slice)[0];
+        let msrs = alloc(layout) as *mut kvm_msrs;
+        let mut msr_entry_slice: &[kvm_msr_entry] =
+            unsafe { slice::from_raw_parts(unsafe { &mut (*msrs).entries }, 6) };
         let mut mode: c_uint = 0;
-        msrs.entries[0].index = KVMiMsrIndices::SysenterCs as u32;
-        msrs.entries[1].index = KVMiMsrIndices::SysenterEsp as u32;
-        msrs.entries[2].index = KVMiMsrIndices::SysenterEip as u32;
-        msrs.entries[3].index = KVMiMsrIndices::MsrEfer as u32;
-        msrs.entries[4].index = KVMiMsrIndices::MsrStar as u32;
-        msrs.entries[5].index = KVMiMsrIndices::MsrLstar as u32;
+        msr_entry_slice[0].index = KVMiMsrIndices::SysenterCs as u32;
+        msr_entry_slice[1].index = KVMiMsrIndices::SysenterEsp as u32;
+        msr_entry_slice[2].index = KVMiMsrIndices::SysenterEip as u32;
+        msr_entry_slice[3].index = KVMiMsrIndices::MsrEfer as u32;
+        msr_entry_slice[4].index = KVMiMsrIndices::MsrStar as u32;
+        msr_entry_slice[5].index = KVMiMsrIndices::MsrLstar as u32;
         let res =
             (self.libkvmi.get_registers)(self.dom, vcpu, &mut regs, &mut sregs, msrs, &mut mode);
         if res != 0 {
             return Err(Error::last_os_error());
         }
-        Ok((regs, sregs, msrs))
+        Ok((regs, sregs, (*msrs)))
     }
 
     fn set_registers(&self, vcpu: u16, regs: &kvm_regs) -> Result<(), Error> {
