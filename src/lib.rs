@@ -22,6 +22,7 @@ use std::io::Error;
 use std::mem;
 use std::os::raw::{c_int, c_uchar, c_uint, c_ushort, c_void};
 use std::ptr::null_mut;
+use std::slice;
 use std::sync::{Condvar, Mutex};
 
 use libkvmi::Libkvmi;
@@ -311,7 +312,7 @@ impl KVMIntrospectable for KVMi {
     fn get_registers(&self, vcpu: u16) -> Result<(kvm_regs, kvm_sregs, kvm_msrs), Error> {
         let mut regs: kvm_regs = unsafe { mem::MaybeUninit::<kvm_regs>::zeroed().assume_init() };
         let mut sregs: kvm_sregs = unsafe { mem::MaybeUninit::<kvm_sregs>::zeroed().assume_init() };
-	//let mut msrs: kvm_msrs = unsafe { mem::MaybeUninit::<kvm_msrs>::zeroed().assume_init() };
+        //let mut msrs: kvm_msrs = unsafe { mem::MaybeUninit::<kvm_msrs>::zeroed().assume_init() };
         let size = 6;
         let layout = Layout::from_size_align(
             mem::size_of::<u32>()
@@ -320,31 +321,27 @@ impl KVMIntrospectable for KVMi {
             cmp::max(mem::align_of::<u32>(), mem::align_of::<kvm_msr_entry>()),
         )
         .unwrap();
-	/*let layout = Layout::from_size_align(
+        /*let layout = Layout::from_size_align(
             size * (mem::size_of::<kvm_msr_entry>()),
             mem::align_of::<kvm_msr_entry>(),
         )
         .unwrap();*/
-        let mut msrs = alloc(layout) as *mut kvm_msrs;
+        let mut msr_ptr = alloc(layout) as *mut kvm_msrs;
+        let mut msrs_slice = unsafe { slice::from_raw_parts(msr_ptr, 1) };
+        let mut msrs = (*msrs_slice)[0];
         let mut mode: c_uint = 0;
-        (*msrs).entries[0].index = KVMiMsrIndices::SysenterCs as u32;
-        (*msrs).entries[1].index = KVMiMsrIndices::SysenterEsp as u32;
-        (*msrs).entries[2].index = KVMiMsrIndices::SysenterEip as u32;
-        (*msrs).entries[3].index = KVMiMsrIndices::MsrEfer as u32;
-        (*msrs).entries[4].index = KVMiMsrIndices::MsrStar as u32;
-        (*msrs).entries[5].index = KVMiMsrIndices::MsrLstar as u32;
-        let res = (self.libkvmi.get_registers)(
-            self.dom,
-            vcpu,
-            &mut regs,
-            &mut sregs,
-            msrs,
-            &mut mode,
-        );
+        msrs.entries[0].index = KVMiMsrIndices::SysenterCs as u32;
+        msrs.entries[1].index = KVMiMsrIndices::SysenterEsp as u32;
+        msrs.entries[2].index = KVMiMsrIndices::SysenterEip as u32;
+        msrs.entries[3].index = KVMiMsrIndices::MsrEfer as u32;
+        msrs.entries[4].index = KVMiMsrIndices::MsrStar as u32;
+        msrs.entries[5].index = KVMiMsrIndices::MsrLstar as u32;
+        let res =
+            (self.libkvmi.get_registers)(self.dom, vcpu, &mut regs, &mut sregs, msrs, &mut mode);
         if res != 0 {
             return Err(Error::last_os_error());
         }
-        Ok((regs, sregs, (*msrs)))
+        Ok((regs, sregs, msrs))
     }
 
     fn set_registers(&self, vcpu: u16, regs: &kvm_regs) -> Result<(), Error> {
